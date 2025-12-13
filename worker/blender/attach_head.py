@@ -195,11 +195,7 @@ def main():
         delete_template_head_mesh(arm, args.head_bone)
 
     # 7) export
-    # export の直前に追加
-    bpy.ops.wm.save_as_mainfile(filepath="/Users/kubotadaichi/Downloads/debug.blend")
-    print("DEBUG: saved debug.blend")
-    print("DEBUG objects:", [(o.name, o.type, o.parent.name if o.parent else None) for o in bpy.data.objects])
-
+    
     out_lower = args.out.lower()
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     if out_lower.endswith(".fbx"):

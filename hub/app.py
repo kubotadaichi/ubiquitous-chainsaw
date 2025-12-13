@@ -2,6 +2,7 @@ import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
 import boto3
 from botocore.exceptions import ClientError
 import redis
@@ -77,3 +78,20 @@ def asset(scan_id: str):
         ExpiresIn=60 * 10,
     )
     return {"download_url": url}
+
+@app.get("/scan/{scan_id}/download")
+def download(scan_id: str):
+    d = r.hgetall(f"scan:{scan_id}")
+    if not d or d.get("status") != "done":
+        raise HTTPException(404, "not ready")
+
+    key = key_out(scan_id)
+    obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+
+    return StreamingResponse(
+        obj["Body"],
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="avatar_{scan_id}.fbx"'
+        },
+    )
