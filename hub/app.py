@@ -1,6 +1,7 @@
 import os
 import uuid
-from fastapi import FastAPI, UploadFile, File, HTTPException
+import time
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 import boto3
@@ -39,14 +40,16 @@ def ensure_bucket():
 
 ensure_bucket()
 
-
+#スキャンデータのアップロード
 @app.post("/scan")
 async def upload_scan(head: UploadFile = File(...)):
     if not head.filename.lower().endswith((".glb", ".gltf")):
         raise HTTPException(400, "head must be .glb/.gltf")
 
     scan_id = str(uuid.uuid4())
-    r.hset(f"scan:{scan_id}", mapping={"status": "queued"})
+    create_at = time.time() #時間によるソートを想定
+    r.hset(f"scan:{scan_id}", mapping={"status": "queued", "created_at": create_at})
+    r.zadd("scans:index", {scan_id:create_at})
     data = await head.read()
 
     s3.put_object(Bucket=S3_BUCKET, Key=key_raw(scan_id), Body=data, ContentType="model/gltf-binary")
@@ -56,6 +59,7 @@ async def upload_scan(head: UploadFile = File(...)):
 
     return {"scan_id": scan_id}
 
+#状態の出力
 @app.get("/scan/{scan_id}/status")
 def status(scan_id: str):
     d = r.hgetall(f"scan:{scan_id}")
@@ -63,6 +67,26 @@ def status(scan_id: str):
         raise HTTPException(404, "scan_id not found")
     return d
 
+#一覧の出力スキャンidをリストで返す機能の作成
+@app.get("/scans")
+def list_scans(
+    limit: int = Query(100, ge=1, le=1000),
+    cursor: float | None = Query(None), 
+):
+    max_score = cursor if cursor is not None else "+inf"
+    
+    scan_ids = r.zrevrangebyscore("scans:index", max=max_score, min ="-inf", start = 0, num=limit,withscores=True) 
+    items = []
+    next_cursor = None
+    
+    for scan_id, score in scan_ids:
+        d = r.hgetall(f"scan:{scan_id}")
+        items.append({"scan_id":scan_id, "status": d.get("status"), "created_at":float(score)})
+        next_cursor = score
+    
+    return {"items": items, "next_cursor": next_cursor if len(items)==limit else None}
+
+#scan一覧を取得
 @app.get("/scan/{scan_id}/asset")
 def asset(scan_id: str):
     d = r.hgetall(f"scan:{scan_id}")
