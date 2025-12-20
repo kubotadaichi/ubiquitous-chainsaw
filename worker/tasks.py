@@ -27,14 +27,14 @@ def key_raw(scan_id: str) -> str:
     return f"raw/{scan_id}/head.glb"
 
 def key_out(scan_id: str) -> str:
-    return f"out/{scan_id}/avatar.fbx"
+    return f"out/{scan_id}/avatar.glb"
 
 def process_scan(scan_id: str):
     r.hset(f"scan:{scan_id}", mapping={"status": "processing"})
 
     with tempfile.TemporaryDirectory() as td:
         head_path = os.path.join(td, "head.glb")
-        out_path = os.path.join(td, "out.fbx")
+        out_path = os.path.join(td, "out.glb")
 
         # download head.glb
         obj = s3.get_object(Bucket=S3_BUCKET, Key=key_raw(scan_id))
@@ -49,13 +49,14 @@ def process_scan(scan_id: str):
             "--head", head_path,
             "--out", out_path,
             "--head_bone", HEAD_BONE,
+            "--calib", '/app/blender/calib.json',
             "--delete_template_head", "true",
             "--decimate_ratio", "0.15",
         ]
         subprocess.check_call(cmd)
 
-        # upload out.fbx
+        # upload out.glb
         with open(out_path, "rb") as f:
-            s3.put_object(Bucket=S3_BUCKET, Key=key_out(scan_id), Body=f.read(), ContentType="application/octet-stream")
+            s3.put_object(Bucket=S3_BUCKET, Key=key_out(scan_id), Body=f.read(), ContentType="model/gltf-binary")
 
     r.hset(f"scan:{scan_id}", mapping={"status": "done"})
