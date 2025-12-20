@@ -1,0 +1,24 @@
+# クラウド用（S3 + ElastiCache）
+#
+# 目的:
+# - hub + worker のみを動かす（redis/minio/web は含めない）
+# - マネージド依存: S3 / ElastiCache Redis
+# - 認証: boto3 は IAM Role（S3_ENDPOINT / ACCESS_KEY / SECRET_KEY なし）
+services:
+  hub:
+    build: ./hub
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      REDIS_URL: ${REDIS_URL}
+
+  worker:
+    build: ./worker
+    restart: unless-stopped
+    environment:
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      REDIS_URL: ${REDIS_URL}

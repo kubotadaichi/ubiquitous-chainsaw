@@ -7,23 +7,32 @@ import boto3
 import redis
 
 REDIS_URL = os.environ["REDIS_URL"]
-S3_ENDPOINT = os.environ["S3_ENDPOINT"]
-S3_ACCESS_KEY = os.environ["S3_ACCESS_KEY"]
-S3_SECRET_KEY = os.environ["S3_SECRET_KEY"]
 S3_BUCKET = os.environ["S3_BUCKET"]
+AWS_REGION = os.environ.get("AWS_REGION")
+S3_ENDPOINT = os.environ.get("S3_ENDPOINT")
+S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY")
+S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY")
 
-BLENDER_BIN = os.environ["BLENDER_BIN"]
-TEMPLATE_FBX = os.environ["TEMPLATE_FBX"]
+BLENDER_BIN = os.environ.get("BLENDER_BIN", "/opt/blender/blender")
+TEMPLATE_FBX = os.environ.get("TEMPLATE_FBX", "/app/blender/template.fbx")
 HEAD_BONE = os.environ.get("HEAD_BONE", "mixamorig7:Head")
 
 r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
-s3 = boto3.client(
-    "s3",
-    endpoint_url=S3_ENDPOINT,
-    aws_access_key_id=S3_ACCESS_KEY,
-    aws_secret_access_key=S3_SECRET_KEY,
-)
+def make_s3_client():
+    kwargs: dict = {}
+    if S3_ENDPOINT:
+        kwargs["endpoint_url"] = S3_ENDPOINT
+        if S3_ACCESS_KEY and S3_SECRET_KEY:
+            kwargs["aws_access_key_id"] = S3_ACCESS_KEY
+            kwargs["aws_secret_access_key"] = S3_SECRET_KEY
+    else:
+        if not AWS_REGION:
+            raise RuntimeError("AWS_REGION is required when S3_ENDPOINT is not set")
+        kwargs["region_name"] = AWS_REGION
+    return boto3.client("s3", **kwargs)
+
+s3 = make_s3_client()
 
 def key_raw(scan_id: str) -> str:
     return f"raw/{scan_id}/head.glb"
