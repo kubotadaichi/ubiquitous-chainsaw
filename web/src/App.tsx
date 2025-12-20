@@ -22,6 +22,7 @@ function App() {
   const sceneRef = useRef<THREE.Scene | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const [modelHistory, setModelHistory] = useState<HistoryItem[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 3D プレビューの初期化
   useEffect(() => {
@@ -66,6 +67,11 @@ function App() {
       setScanId(data.scan_id)
       setStatus(null)
       setModelHistory(prev => [...prev, { file: selectedFile, id: data.scan_id, name: selectedFile.name }])
+      setSelectedFile(null)
+      setPreviewFile(null)
+      if(fileInputRef.current){
+        fileInputRef.current.value = ''//inputのvalueをリセット
+      }
       showStatus('success', '✅　送信しました！')
     } catch (error) {
       showStatus('error', `エラー: ${error instanceof Error ? error.message : '不明なエラー'}`)
@@ -81,6 +87,9 @@ function App() {
     setPreviewFile(null)
     setScanId(null)
     setStatus(null)
+    if(fileInputRef.current){
+      fileInputRef.current.value = ''//inputのvalueをリセット
+    }
     showStatus('success', '削除しました。再度ファイルをアップロードしてください')
 }
   const initializePreview = async (file: File) => {
@@ -297,6 +306,7 @@ function App() {
               id="fileInput"
               accept=".glb,.gltf"
               style={{ display: 'none' }}
+              ref ={fileInputRef}
               onChange={(e) => e.target.files && e.target.files.length > 0 && handleFileSelect(e.target.files[0])}
             />
 
