@@ -56,7 +56,7 @@ services:
       S3_BUCKET: hack
       BLENDER_BIN: /opt/blender/blender
       TEMPLATE_FBX: /app/blender/template.fbx
-      HEAD_BONE: mixamorig:Head
+      HEAD_BONE: mixamorig7:Head
     depends_on:
       - redis
       - minio_init

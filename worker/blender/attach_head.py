@@ -142,6 +142,40 @@ def rigid_skin_to_bone(head_obj, armature_obj, bone_name: str):
     bpy.context.view_layer.objects.active = armature_obj
     bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
 
+def resolve_bone_name(armature_obj, requested: str) -> str:
+    requested = (requested or "").strip()
+    if not requested:
+        raise RuntimeError("head_bone is empty")
+
+    bones = [b.name for b in armature_obj.data.bones]
+    if requested in armature_obj.data.bones:
+        return requested
+
+    base = requested.split(":", 1)[1] if ":" in requested else requested
+    base_lower = base.lower()
+
+    exact_segment_matches = [n for n in bones if n.split(":", 1)[-1].lower() == base_lower]
+    if len(exact_segment_matches) == 1:
+        chosen = exact_segment_matches[0]
+        print(f"NOTE: head bone '{requested}' not found; using '{chosen}'")
+        return chosen
+    if len(exact_segment_matches) > 1:
+        chosen = sorted(exact_segment_matches, key=len)[0]
+        print(f"NOTE: head bone '{requested}' not found; using '{chosen}' from {exact_segment_matches}")
+        return chosen
+
+    exact_name_matches = [n for n in bones if n.lower() == base_lower]
+    if len(exact_name_matches) == 1:
+        chosen = exact_name_matches[0]
+        print(f"NOTE: head bone '{requested}' not found; using '{chosen}'")
+        return chosen
+
+    head_like = [n for n in bones if "head" in n.lower()]
+    raise RuntimeError(
+        f"Head bone '{requested}' not found. "
+        f"Try one of: {head_like[:20]} (total {len(head_like)})."
+    )
+
 def delete_template_head_mesh(armature_obj, head_bone_name: str):
     """
     テンプレの頭を「雑に消す」版:
@@ -326,7 +360,7 @@ def main():
     ap.add_argument("--template", required=True)
     ap.add_argument("--head", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--head_bone", default="mixamorig:Head")
+    ap.add_argument("--head_bone", default="mixamorig7:Head")
     ap.add_argument("--calib", default=None)
     ap.add_argument("--delete_template_head", default="false")
     ap.add_argument("--decimate_ratio", type=float, default=1.0)
@@ -390,12 +424,13 @@ def main():
 
     # 5) parent to head bone
     # GLBではボーン親子付けより、スキニングの方が崩れにくい
-    rigid_skin_to_bone(head_obj, arm, args.head_bone)
+    head_bone = resolve_bone_name(arm, args.head_bone)
+    rigid_skin_to_bone(head_obj, arm, head_bone)
     print(f"After bind: scale={head_obj.scale}, location={head_obj.location}")
 
     # 6) delete template head (optional)
     if str(args.delete_template_head).lower() in ("1","true","yes","y"):
-        delete_template_head_mesh(arm, args.head_bone)
+        delete_template_head_mesh(arm, head_bone)
 
     # 7) export
     # エクスポート前のシーン状態をデバッグ
@@ -428,4 +463,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

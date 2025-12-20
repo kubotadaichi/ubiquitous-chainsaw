@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import traceback
 import boto3
 import redis
 
@@ -12,7 +13,7 @@ S3_BUCKET = os.environ["S3_BUCKET"]
 
 BLENDER_BIN = os.environ["BLENDER_BIN"]
 TEMPLATE_FBX = os.environ["TEMPLATE_FBX"]
-HEAD_BONE = os.environ.get("HEAD_BONE", "mixamorig:Head")
+HEAD_BONE = os.environ.get("HEAD_BONE", "mixamorig7:Head")
 
 r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
@@ -30,33 +31,46 @@ def key_out(scan_id: str) -> str:
     return f"out/{scan_id}/avatar.glb"
 
 def process_scan(scan_id: str):
-    r.hset(f"scan:{scan_id}", mapping={"status": "processing"})
+    r.hset(f"scan:{scan_id}", mapping={"status": "processing", "error": ""})
 
-    with tempfile.TemporaryDirectory() as td:
-        head_path = os.path.join(td, "head.glb")
-        out_path = os.path.join(td, "out.glb")
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            head_path = os.path.join(td, "head.glb")
+            out_path = os.path.join(td, "out.glb")
 
-        # download head.glb
-        obj = s3.get_object(Bucket=S3_BUCKET, Key=key_raw(scan_id))
-        with open(head_path, "wb") as f:
-            f.write(obj["Body"].read())
+            # download head.glb
+            obj = s3.get_object(Bucket=S3_BUCKET, Key=key_raw(scan_id))
+            with open(head_path, "wb") as f:
+                f.write(obj["Body"].read())
 
-        # run blender headless
-        cmd = [
-            BLENDER_BIN, "-b", "-noaudio",
-            "--python", "/app/blender/attach_head.py", "--",
-            "--template", TEMPLATE_FBX,
-            "--head", head_path,
-            "--out", out_path,
-            "--head_bone", HEAD_BONE,
-            "--calib", '/app/blender/calib.json',
-            "--delete_template_head", "true",
-            "--decimate_ratio", "0.15",
-        ]
-        subprocess.check_call(cmd)
+            # run blender headless
+            cmd = [
+                BLENDER_BIN, "-b", "-noaudio",
+                "--python", "/app/blender/attach_head.py", "--",
+                "--template", TEMPLATE_FBX,
+                "--head", head_path,
+                "--out", out_path,
+                "--head_bone", HEAD_BONE,
+                "--calib", '/app/blender/calib.json',
+                "--delete_template_head", "true",
+                "--decimate_ratio", "0.15",
+            ]
+            subprocess.check_call(cmd)
 
-        # upload out.glb
-        with open(out_path, "rb") as f:
-            s3.put_object(Bucket=S3_BUCKET, Key=key_out(scan_id), Body=f.read(), ContentType="model/gltf-binary")
-
-    r.hset(f"scan:{scan_id}", mapping={"status": "done"})
+            # upload out.glb
+            with open(out_path, "rb") as f:
+                s3.put_object(
+                    Bucket=S3_BUCKET,
+                    Key=key_out(scan_id),
+                    Body=f.read(),
+                    ContentType="model/gltf-binary",
+                )
+    except Exception as e:
+        tb = traceback.format_exc(limit=10)
+        r.hset(
+            f"scan:{scan_id}",
+            mapping={"status": "failed", "error": (str(e) + "\n" + tb)[:4000]},
+        )
+        raise
+    else:
+        r.hset(f"scan:{scan_id}", mapping={"status": "done"})

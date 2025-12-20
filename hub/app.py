@@ -30,7 +30,7 @@ def key_raw(scan_id: str) -> str:
     return f"raw/{scan_id}/head.glb"
 
 def key_out(scan_id: str) -> str:
-    return f"out/{scan_id}/avatar.fbx"
+    return f"out/{scan_id}/avatar.glb"
 
 
 def ensure_bucket():
@@ -124,8 +124,8 @@ def download(scan_id: str):
 
     return StreamingResponse(
         obj["Body"],
-        media_type="application/octet-stream",
+        media_type="model/gltf-binary",
         headers={
-            "Content-Disposition": f'attachment; filename="avatar_{scan_id}.fbx"'
+            "Content-Disposition": f'attachment; filename="avatar_{scan_id}.glb"'
         },
     )
