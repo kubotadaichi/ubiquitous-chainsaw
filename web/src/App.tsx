@@ -49,7 +49,7 @@ function App() {
 
     setUploading(true)
     setProgress(30)
-    showStatus('info', 'アップロード中...')
+    showStatus('info', '✉アップロード中...')
 
     try {
       const response = await fetch(`${API_BASE}/scan`, {
@@ -60,13 +60,13 @@ function App() {
       setProgress(100)
 
       if (!response.ok) {
-        throw new Error('アップロードに失敗しました:${response.status}')
+        throw new Error('アップロードに失敗しました')
       }
       const data = await response.json() as { scan_id: string }
       setScanId(data.scan_id)
       setStatus(null)
       setModelHistory(prev => [...prev, { file: selectedFile, id: data.scan_id, name: selectedFile.name }])
-      checkStatus(data.scan_id)
+      showStatus('success', '✅　送信しました！')
     } catch (error) {
       showStatus('error', `エラー: ${error instanceof Error ? error.message : '不明なエラー'}`)
       setProgress(0)
@@ -75,6 +75,14 @@ function App() {
     }
   }
 
+  //file削除機能
+  const handleDeleteBeforeUpload = async() => {
+    setSelectedFile(null)
+    setPreviewFile(null)
+    setScanId(null)
+    setStatus(null)
+    showStatus('success', '削除しました。再度ファイルをアップロードしてください')
+}
   const initializePreview = async (file: File) => {
     try {
       const reader = new FileReader()
@@ -251,33 +259,6 @@ function App() {
     }
   }
 
-  const handleDownload = async () => {
-    if (!scanId) return
-
-    try {
-      const response = await fetch(`${API_BASE}/scan/${scanId}/download`)
-
-      if (!response.ok) {
-        throw new Error('ダウンロードに失敗しました')
-      }
-
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `avatar_${scanId}.fbx`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-
-      showStatus('success', 'ダウンロードを開始しました！')
-
-    } catch (error) {
-      showStatus('error', `ダウンロードエラー: ${error instanceof Error ? error.message : '不明なエラー'}`)
-    }
-  }
-
   return (
     <div className="app-wrapper">
       <div className="stars"></div>
@@ -292,7 +273,7 @@ function App() {
           <div className="decorative-circle"></div>
         </div>
 
-        {/* 修正: content-wrapper を正しく閉じる */}
+        {/* コンテンツ */}
         <div className="content-wrapper">
           {/* アップロードエリア */}
           <div className="upload-section">
@@ -327,6 +308,9 @@ function App() {
                   <div className="file-name">{selectedFile.name}</div>
                   <div className="file-size">{formatFileSize(selectedFile.size)}</div>
                 </div>
+                <button className="btn-delete-inline" onClick={handleDeleteBeforeUpload} title="ファイルを削除">
+                  ✖
+                </button>
               </div>
             )}
 
@@ -339,6 +323,13 @@ function App() {
               {uploading ? '処理中...' : 'アップロード & 変換'}
             </button>
 
+            {scanId && (
+              <div className = "scan-result">
+                <p> Scan ID: <strong>{scanId}</strong></p>
+                </div>
+            )}
+
+
             {/* プログレスバー */}
             {uploading && (
               <div className="progress-container">
@@ -349,45 +340,14 @@ function App() {
               </div>
             )}
 
-            {/* 修正: クラス名のスペースを追加 */}
-            {status && (
+            {/* ステータスメッセージ */}
+            {status &&(
               <div className={`status-message ${statusType} show`}>
                 {status}
               </div>
             )}
-
-            {/* 結果ボックス */}
-            {scanId && (
-  <div className="result-box show">
-    <h3 style={{ marginBottom: '8px', color: '#333' }}>✨ アップロード完了</h3>
-    {scanStatus === 'done' && (
-      <p style={{ fontSize: '12px', color: '#666', marginBottom: '12px' }}>処理が完了しました</p>
-    )}
-    <p style={{ fontSize: '12px', color: '#666', marginBottom: '12px' }}>Scan ID: </p>
-    <div className="scan-id">{scanId}</div>
-    
-    <button className="btn-check" onClick={() => checkStatus()}>
-      ステータス確認
-    </button>
-    {scanStatus === 'done' && (
-      <button className="btn-download" onClick={handleDownload}>
-        ダウンロード
-      </button>
-    )}
-
-    {scanStatus && (
-      <div style={{ marginTop: '12px', fontSize: '12px', fontWeight: '600' }}>
-        ステータス: 
-        {scanStatus === 'done' && ' ✅ 完了'}
-        {scanStatus === 'processing' && ' ⏳ 処理中'}
-        {scanStatus === 'queued' && ' 📋 キュー待ち'}
-        {scanStatus === 'failed' && ' ❌ エラー'}
-      </div>
-    )}
-  </div>
-)}
-              
           </div>
+
 
           {/* 修正: 履歴セクションを content-wrapper 内に移動し、構造をシンプルに */}
           {modelHistory.length > 0 && (
