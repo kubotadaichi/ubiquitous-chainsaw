@@ -4,6 +4,7 @@ import time
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 import boto3
 from botocore.exceptions import ClientError
 import redis
@@ -39,6 +40,15 @@ def ensure_bucket():
         s3.create_bucket(Bucket=S3_BUCKET)
 
 ensure_bucket()
+
+#別のappからのリクエスト送信を許可
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"], #GET,POSTなど
+    allow_headers=["*"], 
+)
 
 #スキャンデータのアップロード
 @app.post("/scan")
