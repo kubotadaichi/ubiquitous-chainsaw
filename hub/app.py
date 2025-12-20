@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import boto3
 from botocore.exceptions import ClientError
 import redis
+import mimetypes
 
 REDIS_URL = os.environ["REDIS_URL"]
 S3_ENDPOINT = os.environ["S3_ENDPOINT"]
@@ -31,6 +32,50 @@ def key_raw(scan_id: str) -> str:
 
 def key_out(scan_id: str) -> str:
     return f"out/{scan_id}/avatar.glb"
+
+def candidate_out_keys(scan_id: str, scan_meta: dict | None = None) -> list[str]:
+    scan_meta = scan_meta or {}
+    keys = []
+    if scan_meta.get("asset_key"):
+        keys.append(scan_meta["asset_key"])
+    keys.append(key_out(scan_id))
+    keys.append(f"out/{scan_id}/avatar.fbx")  # backward compatibility
+    seen = set()
+    out = []
+    for k in keys:
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
+
+def guess_content_type(key: str, scan_meta: dict | None = None) -> str:
+    scan_meta = scan_meta or {}
+    if scan_meta.get("asset_content_type"):
+        return scan_meta["asset_content_type"]
+    if key.lower().endswith(".glb"):
+        return "model/gltf-binary"
+    if key.lower().endswith(".gltf"):
+        return "model/gltf+json"
+    if key.lower().endswith(".fbx"):
+        return "application/octet-stream"
+    return mimetypes.guess_type(key)[0] or "application/octet-stream"
+
+def guess_filename(scan_id: str, key: str, scan_meta: dict | None = None) -> str:
+    scan_meta = scan_meta or {}
+    if scan_meta.get("asset_filename"):
+        return scan_meta["asset_filename"]
+    ext = os.path.splitext(key)[1] or ".bin"
+    return f"avatar_{scan_id}{ext}"
+
+def head_object_exists(key: str) -> bool:
+    try:
+        s3.head_object(Bucket=S3_BUCKET, Key=key)
+        return True
+    except ClientError as e:
+        code = (e.response.get("Error") or {}).get("Code")
+        if code in ("404", "NoSuchKey", "NotFound"):
+            return False
+        raise
 
 
 def ensure_bucket():
@@ -105,13 +150,17 @@ def asset(scan_id: str):
     if d.get("status") != "done":
         return JSONResponse({"status": d.get("status", "unknown")}, status_code=409)
 
-    # 署名URL（MinIOでも使える）
-    url = s3.generate_presigned_url(
-        ClientMethod="get_object",
-        Params={"Bucket": S3_BUCKET, "Key": key_out(scan_id)},
-        ExpiresIn=60 * 10,
-    )
-    return {"download_url": url}
+    for key in candidate_out_keys(scan_id, d):
+        if head_object_exists(key):
+            url = s3.generate_presigned_url(
+                ClientMethod="get_object",
+                Params={"Bucket": S3_BUCKET, "Key": key},
+                ExpiresIn=60 * 10,
+            )
+            return {"download_url": url, "key": key}
+
+    # doneなのに実体がない: hub側は落とさずクライアントに伝える
+    return JSONResponse({"status": "missing_asset"}, status_code=409)
 
 @app.get("/scan/{scan_id}/download")
 def download(scan_id: str):
@@ -119,13 +168,22 @@ def download(scan_id: str):
     if not d or d.get("status") != "done":
         raise HTTPException(404, "not ready")
 
-    key = key_out(scan_id)
-    obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+    last_err: Exception | None = None
+    for key in candidate_out_keys(scan_id, d):
+        try:
+            obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+            content_type = guess_content_type(key, d)
+            filename = guess_filename(scan_id, key, d)
+            return StreamingResponse(
+                obj["Body"],
+                media_type=content_type,
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        except ClientError as e:
+            code = (e.response.get("Error") or {}).get("Code")
+            if code in ("404", "NoSuchKey", "NotFound"):
+                last_err = e
+                continue
+            raise
 
-    return StreamingResponse(
-        obj["Body"],
-        media_type="model/gltf-binary",
-        headers={
-            "Content-Disposition": f'attachment; filename="avatar_{scan_id}.glb"'
-        },
-    )
+    return JSONResponse({"status": "missing_asset"}, status_code=409)

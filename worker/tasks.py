@@ -2,6 +2,7 @@ import os
 import subprocess
 import tempfile
 import traceback
+import time
 import boto3
 import redis
 
@@ -31,7 +32,7 @@ def key_out(scan_id: str) -> str:
     return f"out/{scan_id}/avatar.glb"
 
 def process_scan(scan_id: str):
-    r.hset(f"scan:{scan_id}", mapping={"status": "processing", "error": ""})
+    r.hset(f"scan:{scan_id}", mapping={"status": "processing", "error": "", "updated_at": time.time()})
 
     try:
         with tempfile.TemporaryDirectory() as td:
@@ -58,13 +59,23 @@ def process_scan(scan_id: str):
             subprocess.check_call(cmd)
 
             # upload out.glb
+            out_key = key_out(scan_id)
             with open(out_path, "rb") as f:
                 s3.put_object(
                     Bucket=S3_BUCKET,
-                    Key=key_out(scan_id),
+                    Key=out_key,
                     Body=f.read(),
                     ContentType="model/gltf-binary",
                 )
+            r.hset(
+                f"scan:{scan_id}",
+                mapping={
+                    "asset_key": out_key,
+                    "asset_content_type": "model/gltf-binary",
+                    "asset_filename": "avatar.glb",
+                    "updated_at": time.time(),
+                },
+            )
     except Exception as e:
         tb = traceback.format_exc(limit=10)
         r.hset(
@@ -73,4 +84,4 @@ def process_scan(scan_id: str):
         )
         raise
     else:
-        r.hset(f"scan:{scan_id}", mapping={"status": "done"})
+        r.hset(f"scan:{scan_id}", mapping={"status": "done", "updated_at": time.time()})
