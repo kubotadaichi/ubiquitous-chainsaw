@@ -21,3 +21,4 @@
 - `ssh_key_name` is the **Key Pair name** in the AWS console (region-scoped), not a `.pem` path.
 - If `docker-compose.cloud.yml` is under a subdirectory in your repo, set `repo_subdir`.
 - If you front the Hub API with CloudFront (`hub_api_https_url`), make sure the EC2 SG allows inbound `:8000` from CloudFront origin-facing IPs (this repo uses the managed prefix list).
+

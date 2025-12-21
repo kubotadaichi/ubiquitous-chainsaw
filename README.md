@@ -4,6 +4,16 @@
 
 後続の処理でUnityのオリンピックゲームに成果物を提供しユーザの顔でゲームを遊ぶことができる。
 
+## 使用技術
+
+- Backend/API: Python 3.12, FastAPI, Uvicorn, Redis, boto3（S3）
+- Worker: Python 3.12, Blender 4.1.1（headless）, Redis, boto3（S3）
+- Frontend: Vite, React, TypeScript, Three.js, `@react-three/fiber`
+- Storage/Queue:
+  - ローカル: MinIO（S3互換）, Redis
+  - クラウド: Amazon S3, Amazon ElastiCache for Redis
+- Infra/Deploy: Terraform, AWS（EC2 など）, Docker / Docker Compose
+
 ## Scaniverse
 
 3Dヘッドスキャンの取得に、iOSアプリ [Scaniverse](https://scaniverse.com/)を使用しています。3Dモデルの構築、ヘッドモデルの切り取りをこのアプリを使用して行っています。
