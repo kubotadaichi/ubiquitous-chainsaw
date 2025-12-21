@@ -42,6 +42,9 @@ def key_raw(scan_id: str) -> str:
 def key_out(scan_id: str) -> str:
     return f"out/{scan_id}/avatar.glb"
 
+def key_out_blend(scan_id: str) -> str:
+    return f"out/{scan_id}/avatar_blend.glb"
+
 def candidate_out_keys(scan_id: str, scan_meta: dict | None = None) -> list[str]:
     scan_meta = scan_meta or {}
     keys = []
@@ -49,6 +52,20 @@ def candidate_out_keys(scan_id: str, scan_meta: dict | None = None) -> list[str]
         keys.append(scan_meta["asset_key"])
     keys.append(key_out(scan_id))
     keys.append(f"out/{scan_id}/avatar.fbx")  # backward compatibility
+    seen = set()
+    out = []
+    for k in keys:
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
+
+def candidate_blend_out_keys(scan_id: str, scan_meta: dict | None = None) -> list[str]:
+    scan_meta = scan_meta or {}
+    keys = []
+    if scan_meta.get("asset_blend_key"):
+        keys.append(scan_meta["asset_blend_key"])
+    keys.append(key_out_blend(scan_id))
     seen = set()
     out = []
     for k in keys:
@@ -75,6 +92,19 @@ def guess_filename(scan_id: str, key: str, scan_meta: dict | None = None) -> str
         return scan_meta["asset_filename"]
     ext = os.path.splitext(key)[1] or ".bin"
     return f"avatar_{scan_id}{ext}"
+
+def guess_content_type_blend(key: str, scan_meta: dict | None = None) -> str:
+    scan_meta = scan_meta or {}
+    if scan_meta.get("asset_blend_content_type"):
+        return scan_meta["asset_blend_content_type"]
+    return guess_content_type(key, scan_meta={})
+
+def guess_filename_blend(scan_id: str, key: str, scan_meta: dict | None = None) -> str:
+    scan_meta = scan_meta or {}
+    if scan_meta.get("asset_blend_filename"):
+        return scan_meta["asset_blend_filename"]
+    ext = os.path.splitext(key)[1] or ".bin"
+    return f"avatar_blend_{scan_id}{ext}"
 
 def head_object_exists(key: str) -> bool:
     try:
@@ -176,6 +206,25 @@ def asset(scan_id: str):
     # doneなのに実体がない: hub側は落とさずクライアントに伝える
     return JSONResponse({"status": "missing_asset"}, status_code=409)
 
+@app.get("/scan/{scan_id}/asset/blend")
+def asset_blend(scan_id: str):
+    d = r.hgetall(f"scan:{scan_id}")
+    if not d:
+        raise HTTPException(404, "scan_id not found")
+    if d.get("status") != "done":
+        return JSONResponse({"status": d.get("status", "unknown")}, status_code=409)
+
+    for key in candidate_blend_out_keys(scan_id, d):
+        if head_object_exists(key):
+            url = s3.generate_presigned_url(
+                ClientMethod="get_object",
+                Params={"Bucket": S3_BUCKET, "Key": key},
+                ExpiresIn=60 * 10,
+            )
+            return {"download_url": url, "key": key}
+
+    return JSONResponse({"status": "missing_asset"}, status_code=409)
+
 @app.get("/scan/{scan_id}/download")
 def download(scan_id: str):
     d = r.hgetall(f"scan:{scan_id}")
@@ -197,6 +246,30 @@ def download(scan_id: str):
             code = (e.response.get("Error") or {}).get("Code")
             if code in ("404", "NoSuchKey", "NotFound"):
                 last_err = e
+                continue
+            raise
+
+    return JSONResponse({"status": "missing_asset"}, status_code=409)
+
+@app.get("/scan/{scan_id}/download/blend")
+def download_blend(scan_id: str):
+    d = r.hgetall(f"scan:{scan_id}")
+    if not d or d.get("status") != "done":
+        raise HTTPException(404, "not ready")
+
+    for key in candidate_blend_out_keys(scan_id, d):
+        try:
+            obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+            content_type = guess_content_type_blend(key, d)
+            filename = guess_filename_blend(scan_id, key, d)
+            return StreamingResponse(
+                obj["Body"],
+                media_type=content_type,
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        except ClientError as e:
+            code = (e.response.get("Error") or {}).get("Code")
+            if code in ("404", "NoSuchKey", "NotFound"):
                 continue
             raise
 

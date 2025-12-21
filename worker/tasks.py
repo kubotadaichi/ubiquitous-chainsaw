@@ -15,6 +15,7 @@ S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY")
 
 BLENDER_BIN = os.environ.get("BLENDER_BIN", "/opt/blender/blender")
 TEMPLATE_FBX = os.environ.get("TEMPLATE_FBX", "/app/blender/template.fbx")
+TEMPLATE_BLEND_FBX = os.environ.get("TEMPLATE_BLEND_FBX", "/app/blender/template_blend.fbx")
 HEAD_BONE = os.environ.get("HEAD_BONE", "mixamorig7:Head")
 
 r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
@@ -40,6 +41,9 @@ def key_raw(scan_id: str) -> str:
 def key_out(scan_id: str) -> str:
     return f"out/{scan_id}/avatar.glb"
 
+def key_out_blend(scan_id: str) -> str:
+    return f"out/{scan_id}/avatar_blend.glb"
+
 def process_scan(scan_id: str):
     r.hset(f"scan:{scan_id}", mapping={"status": "processing", "error": "", "updated_at": time.time()})
 
@@ -47,6 +51,7 @@ def process_scan(scan_id: str):
         with tempfile.TemporaryDirectory() as td:
             head_path = os.path.join(td, "head.glb")
             out_path = os.path.join(td, "out.glb")
+            out_blend_path = os.path.join(td, "out_blend.glb")
 
             # download head.glb
             obj = s3.get_object(Bucket=S3_BUCKET, Key=key_raw(scan_id))
@@ -82,6 +87,50 @@ def process_scan(scan_id: str):
                     "asset_key": out_key,
                     "asset_content_type": "model/gltf-binary",
                     "asset_filename": "avatar.glb",
+                    "updated_at": time.time(),
+                },
+            )
+
+            # run blender headless (blend body template)
+            cmd_blend = [
+                BLENDER_BIN,
+                "-b",
+                "-noaudio",
+                "--python",
+                "/app/blender/attach_head.py",
+                "--",
+                "--template",
+                TEMPLATE_BLEND_FBX,
+                "--head",
+                head_path,
+                "--out",
+                out_blend_path,
+                "--head_bone",
+                HEAD_BONE,
+                "--calib",
+                "/app/blender/calib.json",
+                "--delete_template_head",
+                "true",
+                "--decimate_ratio",
+                "0.15",
+            ]
+            subprocess.check_call(cmd_blend)
+
+            # upload out_blend.glb
+            out_blend_key = key_out_blend(scan_id)
+            with open(out_blend_path, "rb") as f:
+                s3.put_object(
+                    Bucket=S3_BUCKET,
+                    Key=out_blend_key,
+                    Body=f.read(),
+                    ContentType="model/gltf-binary",
+                )
+            r.hset(
+                f"scan:{scan_id}",
+                mapping={
+                    "asset_blend_key": out_blend_key,
+                    "asset_blend_content_type": "model/gltf-binary",
+                    "asset_blend_filename": "avatar_blend.glb",
                     "updated_at": time.time(),
                 },
             )

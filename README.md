@@ -48,6 +48,7 @@
 - ステータス確認（`GET /scan/{scan_id}/status`）
 - 一覧取得（`GET /scans`）
 - 生成物の取得（`GET /scan/{scan_id}/download` / `GET /scan/{scan_id}/asset`）
+- 生成物（blend版）の取得（`GET /scan/{scan_id}/download/blend` / `GET /scan/{scan_id}/asset/blend`）
 
 ## ローカル起動（Docker Compose）
 
@@ -78,6 +79,9 @@ curl -sS "http://localhost:8000/scan/${SCAN_ID}/status" | jq
 
 # 3) download（done になったら）
 curl -L -o avatar.glb "http://localhost:8000/scan/${SCAN_ID}/download"
+
+# 4) download（blend版）
+curl -L -o avatar_blend.glb "http://localhost:8000/scan/${SCAN_ID}/download/blend"
 ```
 
 ## クラウド起動（AWS）
@@ -102,4 +106,5 @@ curl -L -o avatar.glb "http://localhost:8000/scan/${SCAN_ID}/download"
 
 - `BLENDER_BIN`（default: `/opt/blender/blender`）
 - `TEMPLATE_FBX`（default: `/app/blender/template.fbx`）
+- `TEMPLATE_BLEND_FBX`（default: `/app/blender/template_blend.fbx`）
 - `HEAD_BONE`（default: `mixamorig7:Head`）
