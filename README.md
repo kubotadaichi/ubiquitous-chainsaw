@@ -89,6 +89,7 @@ curl -L -o avatar.glb "http://localhost:8000/scan/${SCAN_ID}/download"
 
 ### worker のみ
 
+
 - `BLENDER_BIN`（default: `/opt/blender/blender`）
 - `TEMPLATE_FBX`（default: `/app/blender/template.fbx`）
 - `HEAD_BONE`（default: `mixamorig7:Head`）
