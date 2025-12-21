@@ -51,6 +51,14 @@ resource "aws_security_group" "ec2" {
     cidr_blocks = [var.hub_ingress_cidr]
   }
 
+  ingress {
+    description     = "hub API from CloudFront (origin-facing)"
+    from_port       = 8000
+    to_port         = 8000
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront_origin_facing.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -124,6 +132,18 @@ data "aws_ami" "al2023" {
   }
 }
 
+data "aws_ec2_managed_prefix_list" "cloudfront_origin_facing" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
+data "aws_cloudfront_cache_policy" "caching_disabled" {
+  name = "Managed-CachingDisabled"
+}
+
+data "aws_cloudfront_origin_request_policy" "all_viewer_except_host_header" {
+  name = "Managed-AllViewerExceptHostHeader"
+}
+
 resource "aws_iam_role" "ec2" {
   name = "${var.project_name}-ec2"
   assume_role_policy = jsonencode({
@@ -182,12 +202,62 @@ resource "aws_instance" "app" {
   vpc_security_group_ids      = [aws_security_group.ec2.id]
   associate_public_ip_address = true
 
-  key_name             = var.ssh_key_name
+  key_name             = var.ssh_key_name == "" ? null : var.ssh_key_name
   iam_instance_profile = aws_iam_instance_profile.ec2.name
 
-  user_data = local.user_data
+  user_data                   = local.user_data
+  user_data_replace_on_change = true
 
   tags = {
     Name = "${var.project_name}-app"
+  }
+}
+
+resource "aws_cloudfront_distribution" "hub_api" {
+  enabled         = true
+  is_ipv6_enabled = true
+  comment         = "${var.project_name} hub API (HTTPS front)"
+  price_class     = "PriceClass_100"
+
+  origin {
+    domain_name = aws_instance.app.public_dns
+    origin_id   = "${var.project_name}-hub-api"
+
+    custom_origin_config {
+      http_port              = 8000
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "${var.project_name}-hub-api"
+    viewer_protocol_policy = "redirect-to-https"
+
+    allowed_methods = [
+      "DELETE",
+      "GET",
+      "HEAD",
+      "OPTIONS",
+      "PATCH",
+      "POST",
+      "PUT",
+    ]
+    cached_methods = ["GET", "HEAD", "OPTIONS"]
+
+    compress                 = true
+    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header.id
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
   }
 }

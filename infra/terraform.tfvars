@@ -1,0 +1,20 @@
+aws_region   = "ap-northeast-1"
+project_name = "pipeline"
+
+# Git clone settings
+repo_url = "https://github.com/kubotadaichi/ubiquitous-chainsaw.git"
+repo_ref = "feat/infra"
+# repo_subdir = "pipeline" # set only if docker-compose.cloud.yml is not in repo root
+
+# EC2 SSH (Key Pair name in ap-northeast-1)
+ssh_key_name = "key-pair"
+
+# Optional: restrict SSH to your IP
+# ssh_ingress_cidr = "203.0.113.10/32"
+
+# Optional: keep hub API public or restrict
+# hub_ingress_cidr = "0.0.0.0/0"
+
+# Optional: sizing
+# instance_type   = "t3.large"
+# redis_node_type = "cache.t3.micro"

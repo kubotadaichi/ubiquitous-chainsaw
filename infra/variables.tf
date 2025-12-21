@@ -16,13 +16,19 @@ variable "repo_ref" {
   default = "main"
 }
 
+variable "repo_subdir" {
+  type    = string
+  default = ""
+}
+
 variable "instance_type" {
   type    = string
   default = "t3.large"
 }
 
 variable "ssh_key_name" {
-  type = string
+  type    = string
+  default = null
 }
 
 variable "ssh_ingress_cidr" {

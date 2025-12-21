@@ -13,6 +13,7 @@ S3_BUCKET="${aws_s3_bucket.assets.bucket}"
 REDIS_URL="${local.redis_url}"
 REPO_URL="${var.repo_url}"
 REPO_REF="${var.repo_ref}"
+REPO_SUBDIR="${var.repo_subdir}"
 
 if command -v dnf >/dev/null 2>&1; then
   dnf update -y
@@ -40,10 +41,32 @@ if [ ! -d "$APP_DIR/.git" ]; then
 fi
 
 cd "$APP_DIR"
-git fetch --all --prune
-git checkout "$REPO_REF" || git checkout -B "$REPO_REF" "origin/$REPO_REF"
+git fetch origin --prune
+if git show-ref --verify --quiet "refs/remotes/origin/$REPO_REF"; then
+  git checkout -B "$REPO_REF" "origin/$REPO_REF"
+else
+  if git checkout "$REPO_REF"; then
+    true
+  else
+    echo "ERROR: repo_ref not found: $REPO_REF" >&2
+    echo "Remote branches:" >&2
+    git branch -r >&2 || true
+    exit 1
+  fi
+fi
 
-cat > "$APP_DIR/.env.cloud" <<'ENV'
+WORK_DIR="$APP_DIR"
+if [ -n "$REPO_SUBDIR" ]; then
+  WORK_DIR="$APP_DIR/$REPO_SUBDIR"
+fi
+
+if [ ! -f "$WORK_DIR/docker-compose.cloud.yml" ]; then
+  echo "ERROR: docker-compose.cloud.yml not found at: $WORK_DIR/docker-compose.cloud.yml" >&2
+  echo "Hint: set Terraform var repo_subdir to the directory that contains docker-compose.cloud.yml" >&2
+  exit 1
+fi
+
+cat > "$WORK_DIR/.env.cloud" <<ENV
 AWS_REGION=$AWS_REGION
 S3_BUCKET=$S3_BUCKET
 REDIS_URL=$REDIS_URL
@@ -52,8 +75,22 @@ ENV
 cat > /usr/local/bin/pipeline-up.sh <<'SH'
 #!/bin/bash
 set -euo pipefail
-cd /opt/pipeline
-/usr/bin/docker compose -f docker-compose.cloud.yml --env-file .env.cloud up -d --build
+WORK_DIR=/opt/pipeline
+if [ -f /opt/pipeline/.repo_subdir ]; then
+  SUBDIR="$(cat /opt/pipeline/.repo_subdir || true)"
+  if [ -n "$SUBDIR" ]; then
+    WORK_DIR="/opt/pipeline/$SUBDIR"
+  fi
+fi
+cd "$WORK_DIR"
+if docker compose version >/dev/null 2>&1; then
+  docker compose -f docker-compose.cloud.yml --env-file "$WORK_DIR/.env.cloud" up -d --build
+elif command -v docker-compose >/dev/null 2>&1; then
+  docker-compose -f docker-compose.cloud.yml --env-file "$WORK_DIR/.env.cloud" up -d --build
+else
+  echo "ERROR: docker compose / docker-compose not found" >&2
+  exit 1
+fi
 SH
 chmod +x /usr/local/bin/pipeline-up.sh
 
@@ -67,13 +104,15 @@ After=docker.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/pipeline-up.sh
-ExecStop=/usr/bin/docker compose -f /opt/pipeline/docker-compose.cloud.yml --env-file /opt/pipeline/.env.cloud down
+ExecStop=/bin/bash -lc 'WORK_DIR=/opt/pipeline; if [ -f /opt/pipeline/.repo_subdir ]; then SUBDIR="$(cat /opt/pipeline/.repo_subdir || true)"; if [ -n "$SUBDIR" ]; then WORK_DIR="/opt/pipeline/$SUBDIR"; fi; fi; cd "$WORK_DIR" && if docker compose version >/dev/null 2>&1; then docker compose -f docker-compose.cloud.yml --env-file "$WORK_DIR/.env.cloud" down; else docker-compose -f docker-compose.cloud.yml --env-file "$WORK_DIR/.env.cloud" down; fi'
 
 [Install]
 WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
+
+echo -n "$REPO_SUBDIR" > "$APP_DIR/.repo_subdir"
 systemctl enable --now pipeline.service
 EOF
 }
